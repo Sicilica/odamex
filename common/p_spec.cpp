@@ -1416,14 +1416,15 @@ P_CrossSpecialLine
 	TeleportSide = side;
 
 	s_SpecialFromServer = FromServer;
-
-	LineSpecials[line->special] (line, thing, line->args[0],
+  
+	if(LineSpecials[line->special] (line, thing, line->args[0],
 					line->args[1], line->args[2],
-					line->args[3], line->args[4]);
+					line->args[3], line->args[4]))
+	{
+		P_HandleSpecialRepeat(line);
 
-	P_HandleSpecialRepeat(line);
-
-	OnActivatedLine(line, thing, side, 0);
+		OnActivatedLine(line, thing, side, 0);
+	}
 
 	s_SpecialFromServer = false;
 }
@@ -1457,18 +1458,19 @@ P_ShootSpecialLine
 
 	//TeleportSide = side;
 
-	LineSpecials[line->special] (line, thing, line->args[0],
+	if(LineSpecials[line->special] (line, thing, line->args[0],
 					line->args[1], line->args[2],
-					line->args[3], line->args[4]);
-
-	P_HandleSpecialRepeat(line);
-
-	OnActivatedLine(line, thing, 0, 2);
-
-	if(serverside)
+					line->args[3], line->args[4]))
 	{
-		P_ChangeSwitchTexture (line, line->flags & ML_REPEAT_SPECIAL, true);
-		OnChangedSwitchTexture (line, line->flags & ML_REPEAT_SPECIAL);
+		P_HandleSpecialRepeat(line);
+
+		OnActivatedLine(line, thing, 0, 2);
+
+		if(serverside)
+		{
+			P_ChangeSwitchTexture (line, line->flags & ML_REPEAT_SPECIAL, true);
+			OnChangedSwitchTexture (line, line->flags & ML_REPEAT_SPECIAL);
+		}
 	}
 
 	s_SpecialFromServer = false;
@@ -1628,7 +1630,11 @@ P_PushSpecialLine
     return true;
 }
 
-
+#ifdef SERVER_APP
+EXTERN_CVAR(sv_coop_completionist)
+EXTERN_CVAR(sv_coop_completionist_secrets)
+EXTERN_CVAR(sv_coop_completionist_found)
+#endif
 
 //
 // P_PlayerInSpecialSector
@@ -1769,6 +1775,35 @@ void P_PlayerInSpecialSector (player_t *player)
 #ifdef CLIENT_APP
 			if (player->mo == consoleplayer().camera)
 				C_RevealSecret();
+#endif
+#ifdef SERVER_APP
+			if (serverside && sv_gametype == GM_COOP && sv_coop_completionist)
+			{
+				char msg[256 + 32];
+
+				// increase found secret count:
+				int found = sv_coop_completionist_found.asInt();
+				found++;
+				sv_coop_completionist_found.ForceSet(found);
+
+				// determine total number of killable monsters and findable secrets for the current level:
+				int findable_secrets = (sv_coop_completionist_secrets < 0.0) ? level.total_secrets : (int)sv_coop_completionist_secrets;
+
+				sprintf(msg, "%s revealed a secret!  %d/%d\n",
+						player->userinfo.netname.c_str(),
+						level.found_secrets,
+						findable_secrets);
+
+				for (Players::iterator itr = players.begin();itr != players.end();++itr)
+				{
+					if (!(itr->ingame()))
+						continue;
+
+					C_MidPrint(msg, &*itr, 5);
+				}
+
+				Printf(PRINT_HIGH, msg);
+			}
 #endif
 		}
 	}
